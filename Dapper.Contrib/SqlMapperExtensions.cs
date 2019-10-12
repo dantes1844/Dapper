@@ -58,6 +58,7 @@ namespace Dapper.Contrib.Extensions
         private static readonly ConcurrentDictionary<RuntimeTypeHandle, IEnumerable<PropertyInfo>> ComputedProperties = new ConcurrentDictionary<RuntimeTypeHandle, IEnumerable<PropertyInfo>>();
         private static readonly ConcurrentDictionary<RuntimeTypeHandle, string> GetQueries = new ConcurrentDictionary<RuntimeTypeHandle, string>();
         private static readonly ConcurrentDictionary<RuntimeTypeHandle, string> TypeTableName = new ConcurrentDictionary<RuntimeTypeHandle, string>();
+        private static readonly ConcurrentDictionary<RuntimeTypeHandle, IEnumerable<PropertyInfo>> SqliteGuidStringKeyProperties = new ConcurrentDictionary<RuntimeTypeHandle, IEnumerable<PropertyInfo>>();
 
         private static readonly ISqlAdapter DefaultAdapter = new SqlServerAdapter();
         private static readonly Dictionary<string, ISqlAdapter> AdapterDictionary
@@ -119,6 +120,21 @@ namespace Dapper.Contrib.Extensions
             KeyProperties[type.TypeHandle] = keyProperties;
             return keyProperties;
         }
+
+        private static List<PropertyInfo> SqliteGuidStringKeyPropertiesCache(Type type)
+        {
+            if (SqliteGuidStringKeyProperties.TryGetValue(type.TypeHandle, out IEnumerable<PropertyInfo> pi))
+            {
+                return pi.ToList();
+            }
+
+            var allProperties = TypePropertiesCache(type);
+            var sqliteGuidStringKeyProperties = allProperties.Where(p => p.GetCustomAttributes(true).Any(a => a is SqliteGuidStringKeyAttribute)).ToList();
+
+            SqliteGuidStringKeyProperties[type.TypeHandle] = sqliteGuidStringKeyProperties;
+            return sqliteGuidStringKeyProperties;
+        }
+
 
         private static List<PropertyInfo> TypePropertiesCache(Type type)
         {
@@ -348,6 +364,20 @@ namespace Dapper.Contrib.Extensions
             var allPropertiesExceptKeyAndComputed = allProperties.Except(keyProperties.Union(computedProperties)).ToList();
 
             var adapter = GetFormatter(connection);
+
+            if (adapter is SQLiteAdapter)
+            {
+                var sqliteGuidStringKeyProperties = SqliteGuidStringKeyPropertiesCache(type);
+                if (sqliteGuidStringKeyProperties.Count > 1)
+                {
+                    throw new ArgumentException("实体只需要设置一个Guid主键就好了");
+                }
+                if (sqliteGuidStringKeyProperties.Count == 1)
+                {
+                    var property = sqliteGuidStringKeyProperties[0];
+                    allPropertiesExceptKeyAndComputed.Add(property);
+                }
+            }
 
             for (var i = 0; i < allPropertiesExceptKeyAndComputed.Count; i++)
             {
@@ -722,6 +752,14 @@ namespace Dapper.Contrib.Extensions
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public class KeyAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// Sqlite专用的Guid字符串型主键
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    public class SqliteGuidStringKeyAttribute : Attribute
     {
     }
 
