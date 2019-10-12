@@ -170,3 +170,5 @@ extension provided by Dapper.Contrib. There are 2 ways to deal with this.
     ```Csharp
     connection.Update<Car>(new Car() { Id = 1, Name = "Maruti" });
     ```
+
+增加一个`SqliteGuidStringKeyAttribute`,该属性用来标记`sqlite`数据库使用`Guid`字符串类型作为主键时，该字段由程序赋值，而非数据库本身。
